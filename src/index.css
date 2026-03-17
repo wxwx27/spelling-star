@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Microsoft JhengHei", "微軟正黑體", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: #fff5f0; /* Very light peach */
+  background-image: radial-gradient(#d1d1d1 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: #2d3436;
+  overflow-x: hidden;
+}
+
+/* Memphis geometric decorations */
+.memphis-shape {
+  position: fixed;
+  z-index: -1;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.circle {
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: #ffeaa7;
+  bottom: -100px;
+  right: -50px;
+}
+
+.triangle {
+  width: 0;
+  height: 0;
+  border-left: 40px solid transparent;
+  border-right: 40px solid transparent;
+  border-bottom: 70px solid #fab1a0;
+  top: 20%;
+  left: 10%;
+  transform: rotate(-15deg);
+}
+
+.square {
+  width: 60px;
+  height: 60px;
+  background: #81ecec;
+  top: 10%;
+  right: 15%;
+  transform: rotate(15deg);
+}
+
+.dot-circle {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: #55efc4;
+  top: 40%;
+  left: -50px;
+}
+
+/* Brutalist Buttons */
+.brutalist-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 900;
+  font-size: 1.25rem;
+  padding: 12px 24px;
+  border: 4px solid #000;
+  box-shadow: 6px 6px 0px 0px #000;
+  transition: all 0.1s ease;
+  border-radius: 12px;
+}
+
+.brutalist-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 8px 8px 0px 0px #000;
+}
+
+.brutalist-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0px 0px 0px 0px #000;
+}
+
+.btn-red { background-color: #ff4757; color: white; }
+.btn-yellow { background-color: #ffe066; color: black; }
+.btn-purple { background-color: #b3b3ff; color: black; }
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-15px) rotate(3deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+

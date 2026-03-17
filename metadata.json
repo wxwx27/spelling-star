@@ -1,0 +1,5 @@
+{
+  "name": "教育部 1200 單字拼字訓練",
+  "description": "基於台灣教育部 1200 個必學單字的 Memphis 風格拼字訓練網頁，具備 AI 學習建議與教師儀表板。",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Represents a student using the application.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The student's name." },
+        "lastActive": { "type": "string", "format": "date-time", "description": "Last time the student practiced." },
+        "totalSessions": { "type": "number", "description": "Total number of practice sessions completed." },
+        "averageAccuracy": { "type": "number", "description": "Overall accuracy percentage." }
+      },
+      "required": ["name"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A single practice session completed by a student.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "description": "ID of the student." },
+        "studentName": { "type": "string", "description": "Name of the student for easier display." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the session was completed." },
+        "difficulty": { "type": "string", "enum": ["low", "medium", "high"], "description": "Difficulty level." },
+        "grade": { "type": "string", "description": "Grade level filter (e.g., 3-6)." },
+        "score": { "type": "number", "description": "Number of correct words." },
+        "totalWords": { "type": "number", "description": "Total words attempted." },
+        "accuracy": { "type": "number", "description": "Accuracy percentage for this session." },
+        "mistakes": { "type": "array", "items": { "type": "string" }, "description": "List of words misspelled." }
+      },
+      "required": ["studentId", "timestamp", "score", "totalWords"]
+    },
+    "WordStat": {
+      "title": "Word Statistics",
+      "description": "Aggregated statistics for a specific word across all students.",
+      "type": "object",
+      "properties": {
+        "word": { "type": "string", "description": "The word itself." },
+        "mistakeCount": { "type": "number", "description": "Total times this word was misspelled." },
+        "attemptCount": { "type": "number", "description": "Total times this word was attempted." }
+      },
+      "required": ["word", "mistakeCount", "attemptCount"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of student profiles."
+    },
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Collection of practice sessions."
+    },
+    "/wordStats/{wordId}": {
+      "schema": "WordStat",
+      "description": "Global statistics for words to identify common mistakes."
+    }
+  }
+}
