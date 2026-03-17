@@ -225,7 +225,7 @@ export default function App() {
       if (error.code === 'auth/popup-blocked') {
         setErrorMessage("登入視窗被瀏覽器封鎖了，請允許彈出視窗後再試一次。");
       } else if (error.code === 'auth/unauthorized-domain') {
-        setErrorMessage("此網域尚未在 Firebase 中獲得授權，請聯繫管理員。");
+        setErrorMessage("此網域尚未在 Firebase 中獲得授權。請將您的 GitHub Pages 網址 (例如 username.github.io) 加入 Firebase 控制台的「授權網域」清單中。");
       } else {
         setErrorMessage("登入失敗：" + (error.message || "未知錯誤"));
       }
