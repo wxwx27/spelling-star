@@ -130,6 +130,8 @@ export default function App() {
   const [correctCount, setCorrectCount] = useState(0);
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [timer, setTimer] = useState(0);
@@ -211,19 +213,30 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    setIsLoggingIn(true);
+    setErrorMessage(null);
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
       setUser(result.user);
       await fetchStudentData(result.user.uid);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
+      if (error.code === 'auth/popup-blocked') {
+        setErrorMessage("登入視窗被瀏覽器封鎖了，請允許彈出視窗後再試一次。");
+      } else if (error.code === 'auth/unauthorized-domain') {
+        setErrorMessage("此網域尚未在 Firebase 中獲得授權，請聯繫管理員。");
+      } else {
+        setErrorMessage("登入失敗：" + (error.message || "未知錯誤"));
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const startPractice = async () => {
     if (!studentName.trim()) {
-      alert("請輸入姓名以開始練習！");
+      setErrorMessage("請輸入姓名以開始練習！");
       return;
     }
 
@@ -247,7 +260,7 @@ export default function App() {
 
     if (practiceMode === 'mistakes') {
       if (!user) {
-        alert("請先登入以練習錯題！");
+        setErrorMessage("請先登入以練習錯題！");
         return;
       }
       // Fetch previous mistakes
@@ -261,7 +274,7 @@ export default function App() {
         });
 
         if (allMistakeWords.size === 0) {
-          alert("目前沒有錯題紀錄，請先進行隨機練習！");
+          setErrorMessage("目前沒有錯題紀錄，請先進行隨機練習！");
           return;
         }
 
@@ -286,7 +299,7 @@ export default function App() {
     const finalSelection = shuffled.slice(0, 100);
 
     if (finalSelection.length === 0) {
-      alert("找不到符合條件的單字，請調整設定！");
+      setErrorMessage("找不到符合條件的單字，請調整設定！");
       return;
     }
 
@@ -462,14 +475,43 @@ export default function App() {
       </motion.p>
 
       {!user ? (
-        <button 
-          onClick={handleLogin}
-          className="brutalist-btn btn-red"
-        >
-          <LogIn size={24} /> Login with Google
-        </button>
+        <div className="flex flex-col gap-4">
+          <button 
+            onClick={handleLogin}
+            disabled={isLoggingIn}
+            className={`brutalist-btn btn-red ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <LogIn size={24} /> {isLoggingIn ? '正在開啟登入視窗...' : 'Login with Google'}
+          </button>
+          {errorMessage && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-100 border-2 border-red-500 p-4 rounded-xl text-red-700 font-bold flex items-center gap-2"
+            >
+              <AlertCircle size={20} />
+              {errorMessage}
+            </motion.div>
+          )}
+          <p className="text-sm text-gray-500 font-bold">
+            * 如果登入視窗未跳出，請檢查瀏覽器是否封鎖了彈出視窗。
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-6 w-full max-w-md">
+          {errorMessage && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded-xl text-yellow-800 font-bold flex items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <AlertCircle size={20} />
+                {errorMessage}
+              </div>
+              <button onClick={() => setErrorMessage(null)} className="text-xl">&times;</button>
+            </motion.div>
+          )}
           {/* Student Name Input */}
           <div className="flex flex-col gap-2 mb-2">
             <label className="font-black text-lg">Your Name:</label>
