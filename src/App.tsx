@@ -321,6 +321,8 @@ export default function App() {
   };
 
   const handleNext = async (isCorrect: boolean) => {
+    if (feedback) return; // Prevent double submission during animation
+    
     const currentWord = sessionWords[currentIndex];
     
     // Update word stats in Firestore
@@ -429,8 +431,11 @@ export default function App() {
           speak(sessionWords[currentIndex].word);
         }
         if (e.key === 'Enter') {
-          // Strict case sensitivity and space check
-          if (userInput === sessionWords[currentIndex].word) {
+          // Case-insensitive and trimmed check
+          const targetWord = sessionWords[currentIndex].word.toLowerCase().trim();
+          const currentInput = userInput.toLowerCase().trim();
+          
+          if (currentInput === targetWord) {
             handleNext(true);
           } else {
             handleNext(false);
@@ -703,6 +708,22 @@ export default function App() {
               title="提示"
             >
               <HelpCircle size={32} />
+            </button>
+            <button 
+              onClick={() => {
+                const targetWord = currentWord.word.toLowerCase().trim();
+                const currentInput = userInput.toLowerCase().trim();
+                if (currentInput === targetWord) {
+                  handleNext(true);
+                } else {
+                  handleNext(false);
+                }
+              }}
+              className="p-4 bg-[#55efc4] rounded-2xl border-4 border-[#2d3436] hover:bg-[#00b894] transition-colors flex items-center gap-2 font-black"
+              title="檢查答案"
+            >
+              <CheckCircle2 size={32} />
+              <span className="hidden md:inline">檢查答案</span>
             </button>
             <button 
               onClick={() => handleNext(false)}
