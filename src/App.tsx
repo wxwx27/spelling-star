@@ -287,9 +287,9 @@ export default function App() {
       // Filter words based on difficulty
       let filtered = MOE_WORDS;
       
-      if (difficulty === 'low') filtered = filtered.filter(w => w.grade <= 3);
-      else if (difficulty === 'medium') filtered = filtered.filter(w => w.grade >= 4 && w.grade <= 5);
-      else filtered = filtered.filter(w => w.grade >= 6);
+      if (difficulty === 'low') filtered = filtered.filter(w => w.word.length <= 4);
+      else if (difficulty === 'medium') filtered = filtered.filter(w => w.word.length >= 5 && w.word.length <= 7);
+      else filtered = filtered.filter(w => w.word.length >= 8);
 
       selected = [...filtered];
     }
