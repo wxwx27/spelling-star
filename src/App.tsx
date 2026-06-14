@@ -141,6 +141,8 @@ export default function App() {
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [wordStats, setWordStats] = useState<WordStat[]>([]);
+  const [dashboardTimePeriod, setDashboardTimePeriod] = useState<'year' | '6months' | '1month' | 'all'>('year');
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('all');
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -158,7 +160,7 @@ export default function App() {
   // Dashboard Data Listener
   useEffect(() => {
     if (view === 'dashboard') {
-      const qSessions = query(collection(db, 'sessions'), orderBy('timestamp', 'desc'), limit(100));
+      const qSessions = query(collection(db, 'sessions'), orderBy('timestamp', 'desc'), limit(2000));
       const unsubscribeSessions = onSnapshot(qSessions, (snapshot) => {
         setAllSessions(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Session)));
       });
@@ -822,117 +824,321 @@ export default function App() {
   );
 
   const renderDashboard = () => {
-    const accuracyData = allSessions.slice(0, 20).reverse().map(s => ({
-      name: s.studentName,
-      accuracy: s.accuracy,
-      date: new Date(s.timestamp).toLocaleDateString()
-    }));
+    // 1. Dynamic filtering of sessions based on selected timeframe & student
+    const filteredSessions = allSessions.filter(s => {
+      // Filter by Student
+      if (selectedStudentFilter !== 'all' && s.studentId !== selectedStudentFilter && s.studentName !== selectedStudentFilter) {
+        return false;
+      }
+      
+      // Filter by Timeframe
+      if (dashboardTimePeriod === 'all') return true;
+      
+      const sessionDate = new Date(s.timestamp);
+      if (isNaN(sessionDate.getTime())) return false;
+      
+      const now = new Date();
+      if (dashboardTimePeriod === 'year') {
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(now.getFullYear() - 1);
+        return sessionDate >= oneYearAgo;
+      }
+      if (dashboardTimePeriod === '6months') {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(now.getMonth() - 6);
+        return sessionDate >= sixMonthsAgo;
+      }
+      if (dashboardTimePeriod === '1month') {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(now.getMonth() - 1);
+        return sessionDate >= oneMonthAgo;
+      }
+      return true;
+    });
 
-    const mistakeData = wordStats.slice(0, 10);
+    // 2. Generate monthly progress trend data
+    const monthlyTrendData = (() => {
+      const groups: { [key: string]: { sumAccuracy: number; count: number } } = {};
+      
+      filteredSessions.forEach(s => {
+        const date = new Date(s.timestamp);
+        if (isNaN(date.getTime())) return;
+        // Group by Year-Month (e.g., 2026-06)
+        const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (!groups[monthKey]) {
+          groups[monthKey] = { sumAccuracy: 0, count: 0 };
+        }
+        groups[monthKey].sumAccuracy += s.accuracy;
+        groups[monthKey].count += 1;
+      });
+      
+      return Object.keys(groups)
+        .sort()
+        .map(month => ({
+          month,
+          accuracy: parseFloat((groups[month].sumAccuracy / groups[month].count).toFixed(1)),
+          count: groups[month].count
+        }));
+    })();
 
-    const difficultyDist = [
-      { name: 'Low', value: allSessions.filter(s => s.difficulty === 'low').length },
-      { name: 'Medium', value: allSessions.filter(s => s.difficulty === 'medium').length },
-      { name: 'High', value: allSessions.filter(s => s.difficulty === 'high').length },
-    ];
+    // 3. Calculate mistakes dedicated to the filtered sessions
+    const mistakeData = (() => {
+      const counts: { [key: string]: number } = {};
+      filteredSessions.forEach(s => {
+        if (s.mistakes && Array.isArray(s.mistakes)) {
+          s.mistakes.forEach(word => {
+            if (word) {
+              const w = word.toLowerCase();
+              counts[w] = (counts[w] || 0) + 1;
+            }
+          });
+        }
+      });
+      return Object.keys(counts)
+        .map(word => ({ word, mistakeCount: counts[word] }))
+        .sort((a, b) => b.mistakeCount - a.mistakeCount)
+        .slice(0, 10);
+    })();
 
-    const COLORS = ['#81ecec', '#ffeaa7', '#fab1a0'];
+    // 4. Generate dynamic progress evaluation report
+    const progressReportMarkdown = (() => {
+      if (monthlyTrendData.length < 2) {
+        return "📊 **自動學習分析報告中...**\n\n目前累積的數據較少。需要累積至少兩個不同月份的練習紀錄，系統才能為您自動生成月度進步狀態的深度對比與學習成長趨勢。建議督促學生維持每天固定的單字練習頻率。";
+      }
+      
+      const currentMonthData = monthlyTrendData[monthlyTrendData.length - 1];
+      const prevMonthData = monthlyTrendData[monthlyTrendData.length - 2];
+      const accuracyDiff = currentMonthData.accuracy - prevMonthData.accuracy;
+      const countDiff = currentMonthData.count - prevMonthData.count;
+      
+      let text = `📅 **月度進步對比與成長分析報告**（期間：${prevMonthData.month} ➡️ ${currentMonthData.month}）：\n\n`;
+      
+      if (accuracyDiff > 0) {
+        text += `📈 **拼字正確率大突破**：平均答題正確率由 **${prevMonthData.accuracy}%** 提升至 **${currentMonthData.accuracy}%**（顯著成長 **+${accuracyDiff.toFixed(1)}%**），這代表學生在近期單字拼寫與自然發音的連結上，取得了卓越的成效！\n\n`;
+      } else if (accuracyDiff < 0) {
+        text += `📉 **答題正確率微幅波動**：平均正確率由 **${prevMonthData.accuracy}%** 調整為 **${currentMonthData.accuracy}%**（波動 **${accuracyDiff.toFixed(1)}%**）。這可能是受新增的進階國中必學單字影響。調整心態後，建議與學生一同檢視下方「常錯單字排行」進行二次複習。\n\n`;
+      } else {
+        text += `➖ **答題成果表現平穩**：正確率穩定維持在 **${currentMonthData.accuracy}%**，拼字基底紮實，本月表現令人放心。建議可挑戰更高難度（Hard）或加快答題速度！\n\n`;
+      }
+      
+      if (countDiff > 0) {
+        text += `🔥 **學習主動性大幅攀升**：本月練習次數由之前的 **${prevMonthData.count}** 次大幅增長至 **${currentMonthData.count}** 次（增加 **+${countDiff}** 次），自主練習的熱情極高，進步值得熱烈表揚！\n\n`;
+      } else if (countDiff < 0) {
+        text += `💤 **練習頻率有所放緩**：本期月度練習量從之前的 **${prevMonthData.count}** 次下滑至 **${currentMonthData.count}** 次（減少 **${Math.abs(countDiff)}** 次），建議家長或導師安排更規律的練習時間，再次點燃學生的練習耐力。`;
+      } else {
+        text += `✨ **練習頻率維持滿格**：本期月度練習次數穩定維持在 **${currentMonthData.count}** 次，展現了極佳的毅力與定力。`;
+      }
+      
+      return text;
+    })();
+
+    // 5. Calculate statistics for display cards
+    const totalSessionsCount = filteredSessions.length;
+    const averageAccuracy = totalSessionsCount > 0
+      ? parseFloat((filteredSessions.reduce((acc, s) => acc + s.accuracy, 0) / totalSessionsCount).toFixed(1))
+      : 0;
 
     return (
       <div className="max-w-6xl mx-auto px-4 py-12">
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-4xl font-black flex items-center gap-3">
-            <LayoutDashboard size={40} /> 教師儀表板
-          </h2>
-          <button onClick={() => setView('home')} className="bg-white px-6 py-2 rounded-xl border-4 border-[#2d3436] font-black">
-            返回
+        {/* Header section with back btn */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h2 className="text-4xl font-black flex items-center gap-3">
+              <LayoutDashboard size={40} className="text-[#a29bfe]" /> 教師學生追蹤後台
+            </h2>
+            <p className="text-gray-500 font-bold mt-1">紀錄大於一年的長效統計資訊，隨時觀測並分析學生學力與進度變化</p>
+          </div>
+          <button onClick={() => setView('home')} className="bg-white px-6 py-2 rounded-xl border-4 border-[#2d3436] font-black hover:bg-gray-50 transition-colors self-start md:self-auto">
+            返回首頁
           </button>
         </div>
 
+        {/* Filters Controls block */}
+        <div className="bg-white p-6 rounded-3xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436] mb-8 flex flex-wrap gap-6 items-center">
+          <div className="flex items-center gap-2">
+            <span className="font-black text-lg text-[#2d3436]">時間範圍:</span>
+            <select 
+              value={dashboardTimePeriod}
+              onChange={(e) => setDashboardTimePeriod(e.target.value as any)}
+              className="p-2 border-2 border-[#2d3436] rounded-xl font-bold focus:outline-none bg-[#ffeaa7]"
+            >
+              <option value="year">📅 過去一年</option>
+              <option value="6months">📅 過去半年</option>
+              <option value="1month">📅 過去一個月</option>
+              <option value="all">🌐 全部歷史紀錄</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="font-black text-lg text-[#2d3436]">選擇學員:</span>
+            <select 
+              value={selectedStudentFilter}
+              onChange={(e) => setSelectedStudentFilter(e.target.value)}
+              className="p-2 border-2 border-[#2d3436] rounded-xl font-bold focus:outline-none bg-[#81ecec]"
+            >
+              <option value="all">👥 所有學生 (統計總覽)</option>
+              {allStudents.map(s => (
+                <option key={s.id || s.name} value={s.id || s.name}>👤 {s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedStudentFilter !== 'all' && (
+            <button 
+              onClick={() => setSelectedStudentFilter('all')}
+              className="px-3 py-1 bg-gray-100 font-bold border-2 border-[#2d3436] rounded-lg text-sm hover:bg-gray-200 transition-colors"
+            >
+              清除學員篩選
+            </button>
+          )}
+        </div>
+
+        {/* Highlight statistics cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
           <div className="bg-white p-6 rounded-2xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436]">
-            <Users className="mb-2 text-[#a29bfe]" />
-            <p className="text-gray-500 font-bold">總學生數</p>
-            <p className="text-3xl font-black">{allStudents.length}</p>
+            <Users className="mb-2 text-[#a29bfe]" size={28} />
+            <p className="text-gray-500 font-bold">總註冊學生</p>
+            <p className="text-3xl font-black">{allStudents.length} 人</p>
           </div>
           <div className="bg-white p-6 rounded-2xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436]">
-            <BarChart3 className="mb-2 text-[#55efc4]" />
-            <p className="text-gray-500 font-bold">總練習次數</p>
-            <p className="text-3xl font-black">{allSessions.length}</p>
+            <BarChart3 className="mb-2 text-[#55efc4]" size={28} />
+            <p className="text-gray-500 font-bold">篩選區間練習量</p>
+            <p className="text-3xl font-black">{totalSessionsCount} 次</p>
           </div>
           <div className="bg-white p-6 rounded-2xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436]">
-            <CheckCircle2 className="mb-2 text-[#81ecec]" />
-            <p className="text-gray-500 font-bold">平均正確率</p>
-            <p className="text-3xl font-black">
-              {(allSessions.reduce((acc, s) => acc + s.accuracy, 0) / (allSessions.length || 1)).toFixed(1)}%
-            </p>
+            <CheckCircle2 className="mb-2 text-[#81ecec]" size={28} />
+            <p className="text-gray-500 font-bold">篩選區間平均正確率</p>
+            <p className="text-3xl font-black">{averageAccuracy}%</p>
           </div>
           <div className="bg-white p-6 rounded-2xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436]">
-            <AlertCircle className="mb-2 text-[#fab1a0]" />
-            <p className="text-gray-500 font-bold">待加強單字</p>
-            <p className="text-3xl font-black">{wordStats.filter(w => w.mistakeCount > 5).length}</p>
+            <AlertCircle className="mb-2 text-[#fab1a0]" size={28} />
+            <p className="text-gray-500 font-bold">當前高頻常錯單字</p>
+            <p className="text-3xl font-black">{mistakeData.length} 個</p>
           </div>
         </div>
 
+        {/* Double charts section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-10">
           <div className="bg-white p-8 rounded-3xl border-4 border-[#2d3436] shadow-[12px_12px_0px_0px_#2d3436]">
-            <h3 className="font-black text-xl mb-6">近期練習正確率趨勢</h3>
+            <h3 className="font-black text-xl mb-6 flex items-center gap-2">
+              📈 月度答題正確率進步曲線 ({selectedStudentFilter === 'all' ? '全體學生' : '個人趨勢'})
+            </h3>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={accuracyData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="accuracy" stroke="#a29bfe" strokeWidth={4} dot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {monthlyTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip formatter={(value) => [`${value}%`, '平均正確率']} />
+                    <Line type="monotone" dataKey="accuracy" stroke="#a29bfe" strokeWidth={5} dot={{ r: 6, fill: '#ff4757' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center font-bold text-gray-400">
+                  此篩選區間暫無練習數據
+                </div>
+              )}
             </div>
           </div>
 
           <div className="bg-white p-8 rounded-3xl border-4 border-[#2d3436] shadow-[12px_12px_0px_0px_#2d3436]">
-            <h3 className="font-black text-xl mb-6">常錯單字排行</h3>
+            <h3 className="font-black text-xl mb-6 flex items-center gap-2">
+              📊 月度練習次數趨勢統計 ({selectedStudentFilter === 'all' ? '全體學生' : '個人練習量'})
+            </h3>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={mistakeData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="word" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="mistakeCount" fill="#fab1a0" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {monthlyTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => [`${value} 次`, '練習次數']} />
+                    <Bar dataKey="count" fill="#55efc4" radius={[6, 6, 0, 0]} border-2 border-black />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center font-bold text-gray-400">
+                  此篩選區間暫無練習數據
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl border-4 border-[#2d3436] shadow-[12px_12px_0px_0px_#2d3436]">
-          <h3 className="font-black text-xl mb-6">學生進度總覽</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b-4 border-[#2d3436]">
-                  <th className="pb-4 font-black">姓名</th>
-                  <th className="pb-4 font-black">最後活動</th>
-                  <th className="pb-4 font-black">練習次數</th>
-                  <th className="pb-4 font-black">平均正確率</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allStudents.map((s, i) => (
-                  <tr key={i} className="border-b-2 border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 font-bold">{s.name}</td>
-                    <td className="py-4 text-gray-600">{new Date(s.lastActive).toLocaleString()}</td>
-                    <td className="py-4 font-black">{s.totalSessions}</td>
-                    <td className="py-4">
-                      <span className={`px-3 py-1 rounded-full font-bold ${s.averageAccuracy > 80 ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
-                        {s.averageAccuracy.toFixed(1)}%
-                      </span>
-                    </td>
+        {/* Dynamic Analytics report */}
+        <div className="bg-amber-50 p-8 rounded-3xl border-4 border-[#2d3436] shadow-[8px_8px_0px_0px_#2d3436] mb-10">
+          <h3 className="font-black text-2xl mb-4 text-[#d63031] flex items-center gap-2">
+            💡 系統智能學習進步分析精簡報告
+          </h3>
+          <div className="prose prose-slate max-w-none text-gray-800 font-medium">
+            <ReactMarkdown>{progressReportMarkdown}</ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Detailed Mistake ranking */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          <div className="lg:col-span-1 bg-white p-8 rounded-3xl border-4 border-[#2d3436] shadow-[12px_12px_0px_0px_#2d3436]">
+            <h3 className="font-black text-xl mb-6 text-[#ff4757]">⚠️ 拼字待加強高頻單字</h3>
+            <div className="space-y-4">
+              {mistakeData.length > 0 ? (
+                mistakeData.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-red-50/50 rounded-xl border-2 border-[#2d3436] font-bold">
+                    <span className="text-[#2d3436] font-black text-lg">{idx + 1}. {item.word}</span>
+                    <span className="bg-[#ff4757] text-white px-2.5 py-0.5 rounded-full text-sm">錯 {item.mistakeCount} 次</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-400 font-bold text-center py-10">此篩選區間學生拼字正確率近乎完美，無高頻錯字紀錄！</p>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 bg-white p-8 rounded-3xl border-4 border-[#2d3436] shadow-[12px_12px_0px_0px_#2d3436]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h3 className="font-black text-xl">👥 學生進度總覽資訊</h3>
+              <p className="text-sm font-bold text-gray-500">*點擊學生欄位，可以直接開啟該學員的個人分析報告與進步曲線!</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b-4 border-[#2d3436]">
+                    <th className="pb-4 font-black text-[#2d3436]">姓名</th>
+                    <th className="pb-4 font-black text-[#2d3436]">最後活躍日期</th>
+                    <th className="pb-4 font-black text-[#2d3436]">累積練習量</th>
+                    <th className="pb-4 font-black text-[#2d3436]">平均正确率</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {allStudents.map((s, i) => (
+                    <tr 
+                      key={i} 
+                      onClick={() => setSelectedStudentFilter(s.id || s.name)}
+                      className={`border-b-2 border-gray-100 hover:bg-[#ffeaa7]/30 cursor-pointer transition-colors ${selectedStudentFilter === (s.id || s.name) ? 'bg-[#ffeaa7]/50' : ''}`}
+                    >
+                      <td className="py-4 font-black text-[#2d3436] flex items-center gap-1.5">
+                        👤 {s.name}
+                        {selectedStudentFilter === (s.id || s.name) && <span className="text-xs text-[#ff4757]">● 觀測中</span>}
+                      </td>
+                      <td className="py-4 text-gray-600 font-bold">{new Date(s.lastActive).toLocaleDateString()}</td>
+                      <td className="py-4 font-black text-[#2d3436]">{s.totalSessions} 次</td>
+                      <td className="py-4">
+                        <span className={`px-3 py-1 rounded-full font-black border-2 border-[#2d3436] ${s.averageAccuracy >= 85 ? 'bg-green-100 text-green-700' : s.averageAccuracy >= 65 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                          {s.averageAccuracy.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {allStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-gray-400 font-bold">
+                        目前尚無註冊學生數據
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
